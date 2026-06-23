@@ -1030,7 +1030,7 @@ async function doSign(){
   const conf=document.getElementById('sig-confirmed');
   conf.classList.add('show');
   document.getElementById('sc-name').textContent=full;
-  document.getElementById('sc-date').textContent=fd+' \u00b7 '+hr;
+  document.getElementById('sc-date').textContent=fd+' · '+hr;
   const prev=document.getElementById('sc-preview');
   if(S.sigURL){
     prev.innerHTML='<img src="'+S.sigURL+'" style="max-height:48px;border-bottom:1px solid rgba(200,150,10,.3);display:block;margin:4px auto">';
@@ -1042,46 +1042,60 @@ async function doSign(){
 
   const est=document.getElementById('est');
   est.className='email-st sending';
-  est.textContent='\u29d7 '+(LANG==='en'?'Generating PDF and sending...':LANG==='pt'?'Gerando PDF e enviando...':'Generando PDF y enviando...');
+  est.textContent='⧗ '+(LANG==='en'?'Capturing contract...':LANG==='pt'?'Capturando contrato...':'Capturando contrato firmado...');
 
-  const opL={a:'Opci\u00f3n A \u2014 20% Efectivo',b:'Opci\u00f3n B \u2014 30% en Productos (neto)'};
+  const opL={a:'Opción A — 20% Efectivo',b:'Opción B — 30% en Productos (neto)'};
 
-  // Generate PDF as base64
   try{
-    buildPDF();
-    const pdocEl=document.getElementById('pdoc');
-    pdocEl.style.display='block';
-    pdocEl.style.width='700px';
-    await new Promise(r=>setTimeout(r,300));
+    // Scroll to top before capture
+    window.scrollTo(0,0);
+    await new Promise(r=>setTimeout(r,400));
 
-    const canvas=await html2canvas(pdocEl,{
-      scale:3,useCORS:true,backgroundColor:'#ffffff',logging:false,width:700
+    // Capture the ENTIRE page exactly as the vendor saw it
+    const fullCanvas=await html2canvas(document.body,{
+      scale:2,
+      useCORS:true,
+      backgroundColor:'#060610',
+      logging:false,
+      scrollX:0,
+      scrollY:0,
+      windowWidth:document.documentElement.scrollWidth,
+      windowHeight:document.documentElement.scrollHeight,
+      width:document.documentElement.scrollWidth,
+      height:document.documentElement.scrollHeight,
     });
-    pdocEl.style.display='none';
-    pdocEl.style.width='';
 
-    const imgData=canvas.toDataURL('image/jpeg',0.92);
+    est.textContent='⧗ '+(LANG==='en'?'Generating PDF...':LANG==='pt'?'Gerando PDF...':'Generando PDF...');
+
+    // Convert to PDF — portrait, letter size
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({unit:'pt',format:'letter',orientation:'portrait'});
-    const pageW=pdf.internal.pageSize.getWidth();
-    const pageH=pdf.internal.pageSize.getHeight();
-    const margin=36;
-    const printW=pageW-margin*2;
-    const imgH=(canvas.height/canvas.width)*printW;
-    pdf.addImage(imgData,'JPEG',margin,margin,printW,imgH);
-    let covered=pageH-margin*2;
+    const pdf=new jsPDF({unit:'px',format:'a4',orientation:'portrait'});
+    const pdfW=pdf.internal.pageSize.getWidth();
+    const pdfH=pdf.internal.pageSize.getHeight();
+
+    // Scale canvas to fit PDF width
+    const imgH=(fullCanvas.height*pdfW)/fullCanvas.width;
+    const imgData=fullCanvas.toDataURL('image/jpeg',0.88);
+
+    // Add pages
+    pdf.addImage(imgData,'JPEG',0,0,pdfW,imgH);
+    let covered=pdfH;
     while(covered<imgH){
       pdf.addPage();
-      pdf.addImage(imgData,'JPEG',margin,margin-covered,printW,imgH);
-      covered+=pageH-margin;
+      pdf.addImage(imgData,'JPEG',0,-covered,pdfW,imgH);
+      covered+=pdfH;
     }
 
-    // Get PDF as base64 (strip data: prefix)
+    // Save for local download
+    S.pdfObject=pdf;
+    S.pdfName='NextGen_BioLabs_Contrato_'+full.replace(/[^a-zA-Z0-9]/g,'_')+'.pdf';
+
+    // Get base64 for email
     const pdfB64=pdf.output('datauristring').split(',')[1];
 
-    // Send to Netlify Function
-    est.textContent='\u29d7 '+(LANG==='en'?'Sending contract to team...':LANG==='pt'?'Enviando contrato para equipe...':'Enviando contrato al equipo...');
+    est.textContent='⧗ '+(LANG==='en'?'Sending to team...':LANG==='pt'?'Enviando para equipe...':'Enviando al equipo...');
 
+    // Send to Netlify Function
     const resp=await fetch('/.netlify/functions/send-contract',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -1090,10 +1104,10 @@ async function doSign(){
         nombre:full,
         whatsapp:sv('ph'),
         email_rep:sv('em'),
-        instagram:sv('ig')||'\u2014',
+        instagram:sv('ig')||'—',
         ciudad:sv('cy'),
         canal:sv('ca'),
-        opcion:opL[S.op]||'\u2014',
+        opcion:opL[S.op]||'—',
         metodo_pago:S.pay,
         fecha_firma:fd+' '+hr,
       })
@@ -1102,51 +1116,47 @@ async function doSign(){
     const result=await resp.json();
     if(result.ok){
       est.className='email-st ok';
-      est.textContent='\u2705 '+(LANG==='en'?'PDF contract sent to nextgenbiolabs@gmail.com':LANG==='pt'?'Contrato PDF enviado para nextgenbiolabs@gmail.com':'Contrato PDF enviado a nextgenbiolabs@gmail.com');
+      est.textContent='✅ '+(LANG==='en'?'PDF sent to nextgenbiolabs@gmail.com':LANG==='pt'?'PDF enviado para nextgenbiolabs@gmail.com':'PDF enviado a nextgenbiolabs@gmail.com');
     }else{
       throw new Error(result.error||'Send failed');
     }
 
-    // Also save PDF locally for vendor
-    S.pdfObject=pdf;
-    S.pdfName='NextGen_BioLabs_Contrato_'+full.replace(/[^a-zA-Z0-9]/g,'_')+'.pdf';
-
   }catch(err){
     console.error('doSign error:',err);
     est.className='email-st ok';
-    est.textContent='\u26a0\ufe0f Error al enviar \u2014 descarga el PDF manualmente';
+    est.textContent='⚠️ Error al enviar — descarga el PDF manualmente';
   }
 }
 async function downloadPDF(){
-  // If already generated during signing, reuse it
+  // Reuse PDF already generated during signing
   if(S.pdfObject){
     S.pdfObject.save(S.pdfName||'NextGen_BioLabs_Contrato.pdf');
     return;
   }
-  // Otherwise generate fresh
-  buildPDF();
-  const el=document.getElementById('pdoc');
-  el.style.display='block';
-  el.style.width='700px';
+  // If called before signing, capture page fresh
+  window.scrollTo(0,0);
+  await new Promise(r=>setTimeout(r,300));
   try{
-    await new Promise(r=>setTimeout(r,200));
-    const canvas=await html2canvas(el,{scale:3,useCORS:true,backgroundColor:'#ffffff',logging:false,width:700});
-    el.style.display='none';
-    el.style.width='';
-    const imgData=canvas.toDataURL('image/jpeg',0.92);
+    const canvas=await html2canvas(document.body,{
+      scale:2,useCORS:true,backgroundColor:'#060610',logging:false,
+      scrollX:0,scrollY:0,
+      windowWidth:document.documentElement.scrollWidth,
+      windowHeight:document.documentElement.scrollHeight,
+      width:document.documentElement.scrollWidth,
+      height:document.documentElement.scrollHeight,
+    });
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({unit:'pt',format:'letter',orientation:'portrait'});
-    const pageW=pdf.internal.pageSize.getWidth();
-    const pageH=pdf.internal.pageSize.getHeight();
-    const margin=36;
-    const printW=pageW-margin*2;
-    const imgH=(canvas.height/canvas.width)*printW;
-    pdf.addImage(imgData,'JPEG',margin,margin,printW,imgH);
-    let covered=pageH-margin*2;
+    const pdf=new jsPDF({unit:'px',format:'a4',orientation:'portrait'});
+    const pdfW=pdf.internal.pageSize.getWidth();
+    const pdfH=pdf.internal.pageSize.getHeight();
+    const imgH=(canvas.height*pdfW)/canvas.width;
+    const imgData=canvas.toDataURL('image/jpeg',0.88);
+    pdf.addImage(imgData,'JPEG',0,0,pdfW,imgH);
+    let covered=pdfH;
     while(covered<imgH){
       pdf.addPage();
-      pdf.addImage(imgData,'JPEG',margin,margin-covered,printW,imgH);
-      covered+=pageH-margin;
+      pdf.addImage(imgData,'JPEG',0,-covered,pdfW,imgH);
+      covered+=pdfH;
     }
     const safeName=[sv('fn'),sv('ln')].filter(Boolean).join('_').replace(/[^a-zA-Z0-9_]/g,'')||'Representante';
     pdf.save('NextGen_BioLabs_Contrato_'+safeName+'.pdf');
