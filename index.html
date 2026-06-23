@@ -1042,60 +1042,52 @@ async function doSign(){
 
   const est=document.getElementById('est');
   est.className='email-st sending';
-  est.textContent='⧗ '+(LANG==='en'?'Capturing contract...':LANG==='pt'?'Capturando contrato...':'Capturando contrato firmado...');
+  est.textContent='⧗ Generando PDF...';
 
   const opL={a:'Opción A — 20% Efectivo',b:'Opción B — 30% en Productos (neto)'};
 
   try{
-    // Scroll to top before capture
-    window.scrollTo(0,0);
+    // Build clean PDF from the #pdoc element (white bg, readable)
+    buildPDF();
+    const pdocEl=document.getElementById('pdoc');
+    pdocEl.style.cssText='display:block!important;width:780px;padding:40px;background:#fff;font-family:Arial,sans-serif;position:fixed;top:-9999px;left:0;z-index:-1';
+    document.body.appendChild(pdocEl);
     await new Promise(r=>setTimeout(r,400));
 
-    // Capture the ENTIRE page exactly as the vendor saw it
-    const fullCanvas=await html2canvas(document.body,{
+    const canvas=await html2canvas(pdocEl,{
       scale:2,
       useCORS:true,
-      backgroundColor:'#060610',
+      backgroundColor:'#ffffff',
       logging:false,
-      scrollX:0,
-      scrollY:0,
-      windowWidth:document.documentElement.scrollWidth,
-      windowHeight:document.documentElement.scrollHeight,
-      width:document.documentElement.scrollWidth,
-      height:document.documentElement.scrollHeight,
+      width:780,
     });
 
-    est.textContent='⧗ '+(LANG==='en'?'Generating PDF...':LANG==='pt'?'Gerando PDF...':'Generando PDF...');
+    pdocEl.style.cssText='display:none';
 
-    // Convert to PDF — portrait, letter size
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({unit:'px',format:'a4',orientation:'portrait'});
+    const pdf=new jsPDF({unit:'pt',format:'a4',orientation:'portrait'});
     const pdfW=pdf.internal.pageSize.getWidth();
     const pdfH=pdf.internal.pageSize.getHeight();
+    const margin=30;
+    const printW=pdfW-margin*2;
+    const imgH=(canvas.height/canvas.width)*printW;
+    const imgData=canvas.toDataURL('image/jpeg',0.85);
 
-    // Scale canvas to fit PDF width
-    const imgH=(fullCanvas.height*pdfW)/fullCanvas.width;
-    const imgData=fullCanvas.toDataURL('image/jpeg',0.88);
-
-    // Add pages
-    pdf.addImage(imgData,'JPEG',0,0,pdfW,imgH);
-    let covered=pdfH;
+    pdf.addImage(imgData,'JPEG',margin,margin,printW,imgH);
+    let covered=pdfH-margin*2;
     while(covered<imgH){
       pdf.addPage();
-      pdf.addImage(imgData,'JPEG',0,-covered,pdfW,imgH);
-      covered+=pdfH;
+      pdf.addImage(imgData,'JPEG',margin,margin-covered,printW,imgH);
+      covered+=pdfH-margin;
     }
 
-    // Save for local download
     S.pdfObject=pdf;
-    S.pdfName='NextGen_BioLabs_Contrato_'+full.replace(/[^a-zA-Z0-9]/g,'_')+'.pdf';
+    S.pdfName='NextGen_Contrato_'+full.replace(/[^a-zA-Z0-9]/g,'_')+'.pdf';
 
-    // Get base64 for email
     const pdfB64=pdf.output('datauristring').split(',')[1];
 
-    est.textContent='⧗ '+(LANG==='en'?'Sending to team...':LANG==='pt'?'Enviando para equipe...':'Enviando al equipo...');
+    est.textContent='⧗ Enviando al equipo...';
 
-    // Send to Netlify Function
     const resp=await fetch('/.netlify/functions/send-contract',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -1116,7 +1108,7 @@ async function doSign(){
     const result=await resp.json();
     if(result.ok){
       est.className='email-st ok';
-      est.textContent='✅ '+(LANG==='en'?'PDF sent to nextgenbiolabs@gmail.com':LANG==='pt'?'PDF enviado para nextgenbiolabs@gmail.com':'PDF enviado a nextgenbiolabs@gmail.com');
+      est.textContent='✅ PDF enviado a nextgenbiolabs@gmail.com';
     }else{
       throw new Error(result.error||'Send failed');
     }
@@ -1124,7 +1116,7 @@ async function doSign(){
   }catch(err){
     console.error('doSign error:',err);
     est.className='email-st ok';
-    est.textContent='⚠️ Error al enviar — descarga el PDF manualmente';
+    est.textContent='⚠️ Error — descarga el PDF manualmente';
   }
 }
 async function downloadPDF(){
